@@ -27,10 +27,7 @@ def risk(theta,W,D_vec,b):
     return jnp.sum(jnp.diag(jnp.outer(Wtheta,Wtheta)) * D_vec) + jnp.sum(D_vec * b**2) - \
         2 * jnp.sum(jnp.diag(W @ jnp.outer(theta,b)) * D_vec)
 
-def train(alpha,beta,gamma,B,v,d,r,W,key):
-    D_vec = jnp.power(jnp.arange(v)+1,-2*alpha)
-    b = jnp.power(jnp.arange(v)+1,-beta)
-
+def train(D_vec,b,gamma,B,v,d,r,W,key):
     #Initialize data
     theta = jnp.zeros(d)
 
