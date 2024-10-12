@@ -1,7 +1,6 @@
 import numpy as np
 import jax.numpy as jnp
 from jax import random, jit
-from functools import partial
 import argparse
 
 @jit
@@ -28,18 +27,11 @@ def risk(theta,W,D_vec,b):
     return jnp.sum(jnp.diag(jnp.outer(Wtheta,Wtheta)) * D_vec) + jnp.sum(D_vec * b**2) - \
         2 * jnp.sum(jnp.diag(W @ jnp.outer(theta,b)) * D_vec)
 
-def get_batch(data,iter,B):
-    idx = iter*B
-    return data[0][idx:idx+B,:], data[1][idx:idx+B]
-
-def sgd_step(iter,theta,data,B,gamma,W):
-    X, y = get_batch(data,iter,B)
-    return sgd_update(gamma,theta,W,X,y)
-
-def train(D_vec,b,theta,gamma,B,r,data,W):
-    body_fun = partial(sgd_step,data=data,B=B,gamma=gamma,W=W)
-    for iter in range(r):
-        theta = body_fun(iter,theta)
+def train(v,D_vec,b,theta,gamma,B,r,W,key):
+    for _ in range(r):
+        key, subkey = random.split(key)
+        X, y = generate_data(B,v,D_vec,b,subkey)
+        theta = sgd_update(gamma,theta,W,X,y)
     return risk(theta,W,D_vec,b)
 
 def run_experiment(alpha,beta,v,d,B,gamma,Cmin,Cmax,mesh_size,tau=0,n_sims=5):
@@ -60,12 +52,10 @@ def run_experiment(alpha,beta,v,d,B,gamma,Cmin,Cmax,mesh_size,tau=0,n_sims=5):
         print(C)
         err = 0
         r = int(C // (B*d))
-        n = r*B
         for _ in range(n_sims):
             key, subkey_data = random.split(key)
-            data = generate_data(n,v,D_vec,b,subkey_data)
             theta = jnp.zeros(d)
-            err_k = train(D_vec,b,theta,gamma,B,r,data,W)
+            err_k = train(v,D_vec,b,theta,gamma,B,r,W,subkey_data)
             err += err_k
         risks[i] = err / n_sims
 
