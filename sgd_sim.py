@@ -1,7 +1,10 @@
 import numpy as np
 import jax.numpy as jnp
 from jax import random, jit
+import matplotlib.pyplot as plt
+import re
 import argparse
+import os
 
 @jit
 def loss(theta,W,data):
@@ -48,6 +51,7 @@ def run_experiment(alpha,beta,v,d,B,gamma,Cmin,Cmax,mesh_size,tau=0,n_sims=5):
     one = jnp.ones(shape=(d,))
     Z = random.normal(subkey_Z, shape=(v,d)) / jnp.sqrt(d)
     W = tau / jnp.sqrt(d) * jnp.outer(b,one) + Z    
+    print("Starting experiment")
     for i, C in enumerate(flops):
         print(C)
         err = 0
@@ -60,6 +64,25 @@ def run_experiment(alpha,beta,v,d,B,gamma,Cmin,Cmax,mesh_size,tau=0,n_sims=5):
         risks[i] = err / n_sims
 
     return risks
+
+def parse_results(file):
+    Cmin = int(re.search(r'\d+',re.search(r'Cmin=\d+',file).group(0)).group(0))
+    Cmax = int(re.search(r'\d+',re.search(r'Cmax=\d+',file).group(0)).group(0))
+    mesh_size = int(re.search(r'\d+',re.search(r'mesh_size=\d+',file).group(0)).group(0))
+    d = int(re.search(r'\d+',re.search(r'd=\d+',file).group(0)).group(0))
+    risks = np.load(file)
+
+    return d, risks, Cmin, Cmax, mesh_size
+
+def plot_results(dims,risks,Cmin,Cmax,mesh_size):
+    flops = jnp.logspace(Cmin,Cmax,mesh_size)
+    for j,d in enumerate(dims):
+        plt.plot(flops,risks[:,j],label="d = {}".format(d))
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.legend()
+    plt.xlabel("flops")
+    plt.ylabel("Risk")
 
 def get_args(parser):
     parser.add_argument('--alpha', type=float, default=0.75,
@@ -90,8 +113,7 @@ def main():
     args = get_args(parser)
     risks = run_experiment(args.alpha,args.beta,args.v,args.d,args.B,args.gamma,
                    args.Cmin,args.Cmax,args.mesh_size)
-    np.save("results/risks_alpha={},beta={},v={},d={},gamma={},B={},Cmin={},Cmax={},mesh_size={}".format(
-        args.alpha,args.beta,args.v,args.d,args.gamma,args.B,args.Cmin,args.Cmax,args.mesh_size), risks)
+    np.save(os.path.expanduser("~/scaling_law_phases/results/risks_alpha={},beta={},v={},d={},gamma={},B={},Cmin={},Cmax={},mesh_size={}".format(args.alpha,args.beta,args.v,args.d,args.gamma,args.B,args.Cmin,args.Cmax,args.mesh_size)), risks)
     
 if __name__ == '__main__':
     main()
