@@ -30,14 +30,22 @@ def risk(theta,W,D_vec,b):
     return jnp.sum(jnp.diag(jnp.outer(Wtheta,Wtheta)) * D_vec) + jnp.sum(D_vec * b**2) - \
         2 * jnp.sum(jnp.diag(W @ jnp.outer(theta,b)) * D_vec)
 
-def train(v,D_vec,b,theta,gamma,B,r,W,key):
-    for _ in range(r):
+def train(v,D_vec,b,theta,gamma,B,r,W,cpts,key):
+    num_cpts = np.shape(cpts)[0]
+    risks = np.zeros(num_cpts)
+    cpt_counter = 0
+    for i in range(r):
         key, subkey = random.split(key)
         X, y = generate_data(B,v,D_vec,b,subkey)
         theta = sgd_update(gamma,theta,W,X,y)
-    return risk(theta,W,D_vec,b)
+        if (i+1) >= cpts[cpt_counter]:
+            risks[cpt_counter] = risk(theta,W,D_vec,b)
+            cpt_counter += 1
+            print("Checkpoint {}".format(cpt_counter))
 
-def run_experiment(alpha,beta,v,d,B,gamma,Cmin,Cmax,mesh_size,tau=0,n_sims=5):
+    return risks
+
+def run_experiment(alpha,beta,v,d,B,gamma,Cmin,Cmax,mesh_size,tau,n_sims):
     D_vec = jnp.power(jnp.arange(v)+1,-2*alpha)
     b = jnp.power(jnp.arange(v)+1,-beta)
 
@@ -45,25 +53,24 @@ def run_experiment(alpha,beta,v,d,B,gamma,Cmin,Cmax,mesh_size,tau=0,n_sims=5):
 
     flops = jnp.logspace(Cmin,Cmax,mesh_size)
     n_flops = jnp.shape(flops)[0]
-    risks = np.zeros(n_flops)
+    risks = np.zeros((n_sims,n_flops))
 
-    key, subkey_Z = random.split(key)
-    one = jnp.ones(shape=(d,))
-    Z = random.normal(subkey_Z, shape=(v,d)) / jnp.sqrt(d)
-    W = tau / jnp.sqrt(d) * jnp.outer(b,one) + Z    
     print("Starting experiment")
-    for i, C in enumerate(flops):
-        print(C)
-        err = 0
-        r = int(C // (B*d))
-        for _ in range(n_sims):
-            key, subkey_data = random.split(key)
-            theta = jnp.zeros(d)
-            err_k = train(v,D_vec,b,theta,gamma,B,r,W,subkey_data)
-            err += err_k
-        risks[i] = err / n_sims
+    for i in range(n_sims):
+        print("Simulation {}...".format(i+1))
+        key, subkey_Z = random.split(key)
+        one = jnp.ones(shape=(d,))
+        Z = random.normal(subkey_Z, shape=(v,d)) / jnp.sqrt(d)
+        W = tau / jnp.sqrt(d) * jnp.outer(b,one) + Z    
+        cpts = flops // (B*d)
+        r = int(cpts[-1])
+        key, subkey_data = random.split(key)
+        theta = jnp.zeros(d)
+        risks[i,:] = train(v,D_vec,b,theta,gamma,B,r,W,cpts,subkey_data)
 
-    return risks
+    risks_mean = np.mean(risks,axis=0)
+    risks_std = np.std(risks,axis=0) / np.sqrt(n_sims)
+    return risks_mean, risks_std
 
 def parse_results(file):
     Cmin = int(re.search(r'\d+',re.search(r'Cmin=\d+',file).group(0)).group(0))
@@ -89,6 +96,8 @@ def get_args(parser):
                         help='Data complexity.')
     parser.add_argument('--beta', type=float, default=0.25,
                         help='Target complexity.')
+    parser.add_argument('--tau', type=float, default=0,
+                        help='Rank-one perturbation coefficient')
     parser.add_argument('--gamma', type=float, default=0.1,
                         help='Learning rate.')
     parser.add_argument('-B', type=int, default=1,
@@ -99,10 +108,12 @@ def get_args(parser):
                         help='Random feature dimension.')
     parser.add_argument('--Cmin', type=int, default=4,
                         help='Logarithm (base 10) of smallest number of flops to try.')
-    parser.add_argument('--Cmax', type=int, default=10,
+    parser.add_argument('--Cmax', type=int, default=9,
                         help='Logarithm (base 10) of largest number of flops to try.')
-    parser.add_argument('--mesh_size', type=int, default=10,
+    parser.add_argument('--mesh_size', type=int, default=50,
                         help='Number of points in flops mesh.')
+    parser.add_argument('--num_sims', type=int, default=4,
+                        help='Number of SGD simulations to run.')
     
     args = parser.parse_args()
     
@@ -111,9 +122,10 @@ def get_args(parser):
 def main():
     parser = argparse.ArgumentParser()
     args = get_args(parser)
-    risks = run_experiment(args.alpha,args.beta,args.v,args.d,args.B,args.gamma,
-                   args.Cmin,args.Cmax,args.mesh_size)
-    np.save(os.path.expanduser("~/scaling_law_phases/results/risks_alpha={},beta={},v={},d={},gamma={},B={},Cmin={},Cmax={},mesh_size={}".format(args.alpha,args.beta,args.v,args.d,args.gamma,args.B,args.Cmin,args.Cmax,args.mesh_size)), risks)
+    risks_mean, risks_std = run_experiment(args.alpha,args.beta,args.v,args.d,args.B,args.gamma,
+                   args.Cmin,args.Cmax,args.mesh_size,args.tau,args.num_sims)
+    np.save(os.path.expanduser("~/scaling_law_phases/results/risks_mean_alpha={},beta={},tau={},v={},d={},gamma={},B={},Cmin={},Cmax={},mesh_size={},num_sims={}".format(args.alpha,args.beta,args.tau,args.v,args.d,args.gamma,args.B,args.Cmin,args.Cmax,args.mesh_size,args.num_sims)), risks_mean)
+    np.save(os.path.expanduser("~/scaling_law_phases/results/risks_std_alpha={},beta={},tau={},v={},d={},gamma={},B={},Cmin={},Cmax={},mesh_size={},num_sims={}".format(args.alpha,args.beta,args.tau,args.v,args.d,args.gamma,args.B,args.Cmin,args.Cmax,args.mesh_size,args.num_sims)), risks_std)
     
 if __name__ == '__main__':
     main()
