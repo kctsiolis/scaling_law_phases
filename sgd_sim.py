@@ -27,8 +27,7 @@ def sgd_update(gamma,theta,W,X,y):
 @jit
 def risk(theta,W,D_vec,b):
     Wtheta = W @ theta
-    return jnp.sum(jnp.diag(jnp.outer(Wtheta,Wtheta)) * D_vec) + jnp.sum(D_vec * b**2) - \
-        2 * jnp.sum(jnp.diag(W @ jnp.outer(theta,b)) * D_vec)
+    return jnp.linalg.norm(jnp.sqrt(D_vec) * (Wtheta - b))**2
 
 def train(v,D_vec,b,theta,gamma,B,r,W,cpts,key):
     num_cpts = np.shape(cpts)[0]
@@ -55,6 +54,8 @@ def run_experiment(alpha,beta,v,d,B,gamma,Cmin,Cmax,mesh_size,tau,n_sims):
     n_flops = jnp.shape(flops)[0]
     risks = np.zeros((n_sims,n_flops))
 
+    gamma = gamma / jnp.sum(jnp.arange(1,v)**(-2.0 * alpha))
+
     print("Starting experiment")
     for i in range(n_sims):
         print("Simulation {}...".format(i+1))
@@ -62,7 +63,7 @@ def run_experiment(alpha,beta,v,d,B,gamma,Cmin,Cmax,mesh_size,tau,n_sims):
         one = jnp.ones(shape=(d,))
         Z = random.normal(subkey_Z, shape=(v,d)) / jnp.sqrt(d)
         W = tau / jnp.sqrt(d) * jnp.outer(b,one) + Z    
-        cpts = flops // (B*d)
+        cpts = flops // (6*B*d)
         r = int(cpts[-1])
         key, subkey_data = random.split(key)
         theta = jnp.zeros(d)
